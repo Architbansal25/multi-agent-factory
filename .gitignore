@@ -47,3 +47,6 @@ pip_log.txt
 Thumbs.db
 .vscode/
 .idea/
+
+# Generated project memory can contain briefs and private feedback.
+/generated/

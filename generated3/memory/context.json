@@ -1,0 +1,90 @@
+{
+  "project_name": "generated3",
+  "stage": "packaging",
+  "current_agent": "manager",
+  "locked_stack": {
+    "language": "JavaScript",
+    "framework": "Express.js",
+    "database": "JSON file on disk",
+    "infra": "Local filesystem",
+    "locked_at_stage": "requirements",
+    "locked_by": "human_approved"
+  },
+  "global_constraints": [
+    "A Node.js + Express backend exposing a REST API.",
+    "A JSON file acting as the data store (no database).",
+    "A simple server-rendered or static HTML/CSS/vanilla-JS frontend consuming the API.",
+    "| Constraint | Rule |",
+    "| Runtime | Node.js |",
+    "| Web framework | **Must use Express.js** |",
+    "| Data store | JSON file on disk (e.g. `data/books.json`) \u2014 no external DB |",
+    "| Frontend JS | Vanilla JavaScript only |",
+    "| CSS frameworks | Bootstrap or Materialize **CSS only** \u2014 their bundled JS/JS components are **not allowed** |",
+    "| Styling | Plain CSS, Sass, or Less all permitted |",
+    "| Documentation | A `README.md` describing the app and local run steps is **required** |",
+    "Agents must not substitute a database (Mongo/Postgres/SQLite/etc.), a frontend framework (React/Vue/Angular), or Bootstrap/Materialize's JS widgets (modals, dropdowns, carousels via their JS bundle) \u2014 reimplement any needed interactivity in vanilla JS.",
+    "Launching the app serves a page in the browser.",
+    "The page prominently displays the application.",
+    "The UI is clean and readable (aesthetic styling, centered content)."
+  ],
+  "approved_decisions": [
+    {
+      "stage": "requirements",
+      "decision": "Approved architecture-plan; see memory/reviews/architecture-plan/approved_plan.md",
+      "approved_at": "2026-09-13T19:37:42.432818+00:00"
+    },
+    {
+      "stage": "requirements",
+      "decision": "Approved stack-lock; see memory/reviews/stack-lock/output.json",
+      "approved_at": "2026-09-13T19:51:19.334170+00:00"
+    },
+    {
+      "stage": "development",
+      "decision": "Approved implementation-plan; see memory/reviews/implementation-plan/approved_plan.md",
+      "approved_at": "2026-09-13T19:56:00.773444+00:00"
+    },
+    {
+      "stage": "development",
+      "decision": "Approved development; see memory/reviews/development/output.json",
+      "approved_at": "2026-09-13T20:02:09.251000+00:00"
+    },
+    {
+      "stage": "packaging",
+      "decision": "Approved packaging; see memory/reviews/packaging/output.json",
+      "approved_at": "2026-09-13T20:02:44.024570+00:00"
+    }
+  ],
+  "open_revisions": [],
+  "completed_items": {
+    "architecture-plan": "reviews/architecture-plan/approved_plan.md",
+    "stack-lock": "reviews/stack-lock/output.json",
+    "implementation-plan": "reviews/implementation-plan/approved_plan.md",
+    "development": "reviews/development/output.json",
+    "packaging": "reviews/packaging/output.json"
+  },
+  "approval_modes": {
+    "architecture-plan": "build-now"
+  },
+  "active_item": null,
+  "approved_tree": [
+    "src/server.js",
+    "src/config/config.js",
+    "src/models/book.js",
+    "src/data/bookRepository.js",
+    "src/services/bookService.js",
+    "src/routes/bookRoutes.js",
+    "src/utils/logger.js",
+    "src/utils/fileUtils.js",
+    "src/public/index.html",
+    "src/public/css/styles.css",
+    "src/public/js/app.js",
+    "src/public/js/ui.js",
+    "src/package.json",
+    "src/.gitignore",
+    "src/.eslintrc.json",
+    "src/README.md",
+    "src/data/books.json",
+    "src/data/.gitkeep"
+  ],
+  "approved_adrs": []
+}

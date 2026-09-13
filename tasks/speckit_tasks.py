@@ -1,193 +1,261 @@
-"""CrewAI tasks implementing the manager-led delivery loop:
+"""Artifact contracts executed only through the human-gated controller.
 
-    Manager    -> instruction to Architect
-    Architect  -> plan + PRD build steps for Developer
-    Developer  -> implement (per service) -> self-test -> confirm to Architect
-    Architect  -> check acceptance criteria -> confirm to Manager
-    Manager    -> confirm delivery to the stakeholder
-
-The pipeline scaffolds either a single application or two independent
-microservices, depending on what ``services`` (see
-``services/service_planner.py``) resolves to for the brief.
+Two human gates bound the run: the Architect's plan and the Developer's
+implementation plan. Everything between them is executed under an approved plan
+and policed by the programmatic guardrails, not by further prompts.
 """
-from __future__ import annotations
-
 from dataclasses import dataclass
 
-from crewai import Agent, Task
-
-from config.settings import Settings, settings as default_settings
-from services.guardrails import code_guardrail
-from services.service_planner import ServiceSpec
 
 
 @dataclass(frozen=True)
-class TaskPlan:
-    """The ordered tasks plus the per-service implement tasks for post-processing."""
-
-    tasks: list[Task]
-    implement_tasks: list[tuple[Task, ServiceSpec]]
-
-
-def _describe_services(services: list[ServiceSpec]) -> str:
-    if len(services) == 1:
-        return "a single application"
-    names = ", ".join(f"'{svc.name}' (port {svc.port})" for svc in services)
-    return f"{len(services)} independent microservices: {names}"
+class StageTask:
+    name: str
+    stage: str
+    agent: str
+    path: str
+    instruction: str
+    template: str | None = None
 
 
-def build_tasks(
-    *,
-    manager: Agent,
-    architect: Agent,
-    developer: Agent,
-    services: list[ServiceSpec],
-    config: Settings | None = None,
-) -> TaskPlan:
-    """Create the ordered task pipeline. The brief is injected at kickoff via
-    the ``{brief}`` template variable."""
-    cfg = config or default_settings
-    service_summary = _describe_services(services)
+ARCHITECTURE_PLAN = StageTask(
+    "architecture-plan", "requirements", "architect", "memory/02_architecture_plan.md",
+    """Plan the ENTIRE requirements and architecture phase in one document for human
+approval. Write for a human reader in markdown, not JSON, and do not write the final
+documents yet.
 
-    kickoff = Task(
-        description=(
-            "Read the engineering brief below and write a clear build "
-            "instruction addressed to the Software Architect. State what must "
-            f"be built ({service_summary}), why it matters, and any hard "
-            "constraints from the brief. Keep every service basic and simple.\n\n"
-            "BRIEF:\n{brief}"
-        ),
-        expected_output=(
-            "A short markdown 'Build Instruction' addressed to the Architect, "
-            "covering scope, goals, and constraints."
-        ),
-        agent=manager,
-        output_file=str(cfg.kickoff_path),
-    )
+This is the only architecture approval in the run. Once it is approved the PRD, FR,
+NFR, HLD and every ADR are generated from it without asking the human again, so
+anything you leave vague here gets decided without them.
 
-    plan = Task(
-        description=(
-            "Read the Manager's build instruction and produce a lightweight "
-            f"technical implementation plan covering {service_summary}. For each "
-            "service, choose a single-file Python web stack (FastAPI with inline "
-            "responses, or Streamlit for a UI), state the framework, the port it "
-            "listens on, and how a caller/browser would exercise it. Keep every "
-            "service basic - no database, no third-party integrations."
-        ),
-        expected_output=(
-            "A markdown 'Implementation Plan' naming the framework, port, and "
-            "endpoints/UI for each service."
-        ),
-        agent=architect,
-        context=[kickoff],
-        output_file=str(cfg.plan_path),
-    )
+Cover, in this order and under these exact headings:
 
-    prd = Task(
-        description=(
-            "Using the plan, write a PRD-style, ordered set of build steps for "
-            "the Developer, grouped by service if there is more than one. Each "
-            "step must be concrete, independently checkable, and include the "
-            "acceptance criteria the Developer's implementation will be judged "
-            "against."
-        ),
-        expected_output=(
-            "A markdown 'PRD' with ordered build steps and explicit acceptance "
-            "criteria per service."
-        ),
-        agent=architect,
-        context=[plan],
-        output_file=str(cfg.prd_path),
-    )
+## Locked Stack
+A four-row table of language, framework, database and infra, taken from
+memory/00_brief.md. Quote the brief line each value comes from. Never default to
+Python or invent a value the brief does not support.
 
-    implement_tasks: list[tuple[Task, ServiceSpec]] = []
-    for service in services:
-        implement = Task(
-            description=(
-                f"Follow the Architect's PRD to build '{service.name}' only. "
-                "Output the COMPLETE source for a single runnable, basic Python "
-                "service that matches the plan (FastAPI with inline responses, "
-                f"or Streamlit for a UI). If it is a FastAPI service, it must run "
-                f"on port {service.port} when started with uvicorn. Output ONLY "
-                "raw Python source: no prose, no markdown fences."
-            ),
-            expected_output="A single, complete, syntactically valid Python source file.",
-            agent=developer,
-            context=[plan, prd],
-            guardrail=code_guardrail,
-            output_file=str(service.output_path),
-        )
-        implement_tasks.append((implement, service))
+## Decisions Needed From You
+Numbered open choices the brief leaves ambiguous (alternatives it offers, values it
+omits). For each: the options, your recommendation, and what it changes downstream.
+Write "None - the brief is unambiguous." if there are none. Do not pick for the human
+here; they answer with 'revise <answers>'.
 
-    developer_test = Task(
-        description=(
-            "Test each implementation you just built against the PRD's "
-            "acceptance criteria (describe what you checked and the result for "
-            "each service). Finish with an explicit sentence confirming to the "
-            "Architect that the implementation(s) are ready for acceptance "
-            "review."
-        ),
-        expected_output=(
-            "A markdown test summary per service ending with an explicit "
-            "readiness confirmation addressed to the Architect."
-        ),
-        agent=developer,
-        context=[prd, *[t for t, _ in implement_tasks]],
-    )
+## Global Constraints Carried Forward
+Every constraint from the brief you will hold downstream, copied verbatim.
 
-    architect_acceptance = Task(
-        description=(
-            "Check the Developer's implementation and test summary against the "
-            "PRD's acceptance criteria for every service. State CONVERGED or NOT "
-            "CONVERGED per service with a brief justification, then finish with "
-            "an explicit sentence confirming to the Manager that the "
-            "application is ready."
-        ),
-        expected_output=(
-            "A markdown acceptance review stating CONVERGED or NOT CONVERGED per "
-            "service, ending with an explicit readiness confirmation addressed "
-            "to the Manager."
-        ),
-        agent=architect,
-        context=[plan, prd, developer_test],
-    )
+## Product Scope
+User goals, in-scope and out-of-scope behaviour, and the testable acceptance criteria
+the PRD will carry.
 
-    service_paths = "\n".join(
-        f"- {svc.name}: `{svc.output_path}` (port {svc.port})" for svc in services
-    )
-    manager_signoff = Task(
-        description=(
-            "The Architect has confirmed the application is ready. Write the "
-            "final delivery message to the stakeholder who requested this work. "
-            "Start with the exact sentence 'The application is ready.' (or 'The "
-            "applications are ready.' if there is more than one service). Then, "
-            "using the plan to know which framework each service uses, give the "
-            "exact copy-pasteable shell command to run each of the following "
-            "services:\n"
-            f"{service_paths}\n"
-            "For a Streamlit service use `streamlit run <path>`. For a FastAPI "
-            "service use `uvicorn <module.path>:app --reload --port <port>` "
-            "(convert the file path to a dotted module path). List one command "
-            "per service, clearly labeled, and close with 'Delivery flow "
-            "complete.'"
-        ),
-        expected_output=(
-            "A short final message starting with 'The application is ready.' (or "
-            "'The applications are ready.'), a labeled, runnable command per "
-            "service, and a closing 'Delivery flow complete.' line."
-        ),
-        agent=manager,
-        context=[kickoff, architect_acceptance],
-    )
+## Functional Requirements Outline
+The FR IDs and one-line titles you will write, grouped by capability.
 
-    all_tasks = [
-        kickoff,
-        plan,
-        prd,
-        *[t for t, _ in implement_tasks],
-        developer_test,
-        architect_acceptance,
-        manager_signoff,
+## Non-Functional Targets
+The measurable performance, scalability, security, availability and maintainability
+numbers you will commit to, each with its justification.
+
+## Architecture
+The components and their responsibilities, the 2-3 key flows you will draw as
+sequence diagrams, failure modes, security boundaries, data consistency and how the
+system is tested and deployed.
+
+## Proposed File Tree
+Every file you will ask the Developer to build - source modules, tests, dependency
+manifests, static assets, configuration - as a flat list of complete paths, one per
+line, no directory placeholders and no tree-drawing characters.
+
+`src/` is the generated project's ROOT DIRECTORY, not its source folder, so EVERY
+path in this list must begin with `src/` - tests, manifests and assets included.
+Write `src/package.json`, never `package.json`; `src/tests/unit/book.test.js`,
+never `tests/unit/book.test.js`; `src/public/index.html`, never `public/index.html`.
+A path that does not start with `src/` is rejected by the factory and blocks the
+build, so write the full path for every entry:
+
+    src/server.js
+    src/routes/bookRoutes.js
+    src/public/index.html
+    src/tests/unit/book.test.js
+    src/package.json
+
+Include at least two application source modules and tests in the locked language.
+This tree becomes binding. The human may choose to build straight from this plan
+without a PRD, FR, NFR or HLD, in which case this section and the ones above are the
+entire specification the Developer gets - so make them complete enough to build from.
+
+## Architecture Decision Records
+The numbered ADRs you will write
+(memory/03_architecture/tradeoffs/0001-title.md style), one per significant decision,
+with the decision each records.
+
+## Risks
+What could go wrong with this plan and what you would do about it.
+
+End with: "Reply 'approve' to lock this plan, or 'revise <your answers or changes>'."
+""")
+
+IMPLEMENTATION_PLAN = StageTask(
+    "implementation-plan", "development", "senior_developer", "memory/04_implementation_plan.md",
+    """Plan the implementation of the approved architecture for human approval. Write
+markdown for a human reader, not JSON, and do not write any code yet.
+
+This is the last approval before the code is written, so state exactly what you will
+build. Read memory/03_architecture/, memory/01_prd.md and context.json.approved_tree
+first; that tree is binding and you may not add, drop or rename a path in it.
+
+Cover, under these exact headings:
+
+## Stack And Tree Confirmation
+Restate the locked stack verbatim and list every approved_tree path you will produce.
+
+## Module Plan
+One subsection per non-test path in the approved tree: its responsibility, the
+functions or exports it will define, the errors it handles, what it logs, and the FR
+or NFR IDs it satisfies.
+
+## Test Plan
+One subsection per test path: what it asserts and which FR or NFR it covers.
+
+## Dependencies
+Each third-party package you will add, the manifest it goes in, and why it is needed.
+Nothing that contradicts the locked stack.
+
+## Verification Commands
+The exact commands the human will run to install dependencies and execute the tests,
+with the working directory. The factory does not run them.
+
+## Concerns
+Anything in the approved architecture you cannot implement as specified, or would
+build differently. Raise it now; after approval you implement the plan as written.
+
+End with: "Reply 'approve' to build this, or 'revise <your changes>'."
+""")
+
+STACK_INSTRUCTION = """Transcribe the stack the human approved in
+memory/reviews/architecture-plan/approved_plan.md into strict JSON. Take the four
+values from that plan's Locked Stack table and fold in every answer the human gave in
+its revision log; do not reopen a choice they already settled and do not default to
+Python. The output must be JSON:
+{"locked_stack": {"language": "...", "framework": "...", "database": "...", "infra": "..."},
+ "global_constraints": ["each constraint from the brief verbatim"], "conflicts": []}
+Take global_constraints from memory/00_brief.md, not from the plan's paraphrase.
+Preserve every bullet (without the '- ' marker), full table row (including pipes),
+and paragraph under headings containing 'Constraints' as its own exact list entry.
+Copy each entry character-for-character, keeping pipes, backticks, ** markers, em
+dashes and trailing punctuation; never reword a table row into prose.
+Exclude table header/separator rows. Keep all other hard constraints as well.
+Use explicit "none" or "local" only if specified in the brief or human feedback.
+conflicts must be empty: the human resolved them at the plan gate. If the approved
+plan genuinely leaves the stack undecidable, return a blocked_reason instead of
+guessing. The factory requires modular source and tests.
+The controller adds locked_by and locked_at_stage only after the stack is recorded.
+"""
+
+# Appended to STACK_INSTRUCTION when the human builds straight from the plan. No HLD
+# is written in that mode, so this step is the only place the binding tree is captured.
+FILE_TREE_INSTRUCTION = """
+The human chose to build directly from the approved architecture plan, so no HLD
+will be written and this step is the only place the binding file tree is recorded.
+Add a file_tree field: an array of every file path from the approved plan's Proposed
+File Tree section, one complete path per entry, with no directory placeholders and
+no tree-drawing characters. It must hold at least two application source modules.
+Never invent a file the human did not approve.
+
+OMIT EVERY TEST FILE. Choosing build-now means no tests are generated in this run,
+so drop any path under a test/tests/__tests__ directory and any file named like
+*.test.*, *.spec.* or test_*. Dropping those is the human's decision, not yours;
+keep every other file the plan listed.
+
+`src/` is the generated project's root directory, so every entry must begin with
+`src/`. Where the approved plan drew a nested tree or omitted the prefix, flatten
+and prefix it: a plan showing `tests/unit/book.test.js` becomes
+`src/tests/unit/book.test.js`, and `package.json` becomes `src/package.json`. That
+is the same file at the location this factory stores it, not a change to the human's
+design - keep every other segment of the path exactly as approved. Prefixing is
+required; renaming, adding or dropping a file is not allowed.
+"""
+
+# Appended to the Developer's instructions in that mode: there is no FR/NFR/HLD to
+# read, so the approved plan has to be treated as the whole specification.
+BUILD_NOW_NOTE = """
+
+The human chose to build directly from the approved architecture plan. There is no
+PRD, FR, NFR, HLD or ADR in this run - do not look for them and do not claim to
+have read them. Treat memory/reviews/architecture-plan/approved_plan.md, its
+proposal revision log, and memory/00_brief.md as the complete specification, and
+context.json.approved_tree as the complete specification and binding file list.
+Trace work to the plan's scope and acceptance criteria in place of FR/NFR
+identifiers. If the plan genuinely does not say enough to build a file correctly,
+return a blocked_reason naming the gap rather than inventing the requirement.
+
+NO TESTS ARE GENERATED IN THIS RUN. The human chose to skip them to save cost.
+context.json.approved_tree contains no test files; do not add any, do not plan a
+Test Plan section, and do not describe tests you are not writing. Put the care that
+would have gone into tests into input validation and error handling instead, so the
+application fails loudly rather than silently. In the development output, give
+verification as {status: 'not_run', commands: ['<exact install command>',
+'<exact command to start the app>'], notes: 'No tests were generated: the human
+selected build-now. Nothing in this delivery has been executed or verified.'}
+"""
+
+
+def build_tasks() -> list[StageTask]:
+    return [
+        StageTask("prd", "requirements", "architect", "memory/01_prd.md",
+                  "Write the PRD from the original brief and the approved architecture plan, "
+                  "preserving all global constraints. Include user goals, scope, ordered requirements "
+                  "and testable acceptance criteria. Do not substitute a stack or discard a human "
+                  "requirement, and do not exceed the scope the human approved."),
+        StageTask("fr", "architecture", "architect", "memory/03_architecture/fr.md",
+                  "Write functional requirements with IDs, priorities and traceability to the approved PRD. "
+                  "Use the FR IDs and titles from the approved architecture plan.", "fr.md"),
+        StageTask("nfr", "architecture", "architect", "memory/03_architecture/nfr.md",
+                  "Write measurable performance, scalability, security, availability and maintainability "
+                  "requirements, with justified targets appropriate to this application. Use the targets "
+                  "committed to in the approved architecture plan.", "nfr.md"),
+        StageTask("hld", "architecture", "architect", "memory/03_architecture/hld.md",
+                  "Write the HLD using the locked stack. Include a Mermaid component diagram, "
+                  "sequence diagrams for 2-3 key flows, failure modes, security boundaries, data "
+                  "consistency, test and deployment design. Include every proposed source, test, "
+                  "dependency, configuration and infrastructure file in the module/file tree under src/. "
+                  "At least two application modules and tests are mandatory. Include additional JSON "
+                  "fields: file_tree (array of complete file paths, no directory placeholders) "
+                  "and adrs (array of memory/03_architecture/tradeoffs/0001-title.md style paths, "
+                  "one per significant decision, at least one). Repeat every path verbatim in hld.md. "
+                  "file_tree and adrs must match the Proposed File Tree and Architecture Decision "
+                  "Records sections of the approved architecture plan; the human approved that tree "
+                  "and it is binding. src/ is the generated project's root directory, so every "
+                  "file_tree entry must begin with src/ - tests, manifests and static assets "
+                  "included (src/package.json, not package.json; src/tests/unit/book.test.js, not "
+                  "tests/unit/book.test.js). Where the approved plan drew a nested tree or omitted "
+                  "the prefix, flatten and prefix it; that relocates the file without changing the "
+                  "human's design. Do not rename, add or drop a file.", "hld.md"),
     ]
 
-    return TaskPlan(tasks=all_tasks, implement_tasks=implement_tasks)
+
+def adr_task(path: str) -> StageTask:
+    return StageTask(path.rsplit("/", 1)[-1][:-3], "architecture", "architect", path,
+                     "Document ONLY this HLD decision as an ADR. Include context, decision, "
+                     "alternatives with pros/cons, and consequences. Respect prior approvals.", "adr.md")
+
+
+DEVELOPMENT = StageTask(
+    "development", "development", "senior_developer", "",
+    "Implement the approved implementation plan using exactly context.json.approved_tree. "
+    "Output all and only those files in the files JSON object. Write complete modular code, "
+    "error handling, validation, logging, dependency manifests and meaningful tests mapping "
+    "to FR/NFR. Never change paths or stack, and build every module exactly as the approved "
+    "implementation plan describes it. If the approved tree or plan needs changing, return a "
+    "blocked_reason instead. No execution tools are available: do not fabricate test results. "
+    "Include verification: {status: 'not_run', commands: ['exact test commands from src/'], "
+    "notes: 'Tests generated but not executed by this factory.'} in the JSON output."
+)
+
+PACKAGING = StageTask(
+    "packaging", "packaging", "manager", "memory/06_delivery.md",
+    "Package the approved delivery: summarize artifacts and revision history; give exact "
+    "dependency-install, test, run and deploy commands, working directories, and prerequisites "
+    "from the actual approved code and manifests. Include known limitations and verification "
+    "status. Tests were NOT RUN by the factory: say so explicitly, never claim production "
+    "readiness or passing tests. No code or architecture changes are permitted."
+)

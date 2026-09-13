@@ -9,79 +9,84 @@ Three roles run a manager-led delivery loop:
 """
 from __future__ import annotations
 
-from crewai import LLM, Agent
+import json
+
+from crewai import LLM, Agent, Crew, Process, Task
 
 from config.settings import Settings, settings as default_settings
+from config.agent_models import load_agent_config
+from agents.prompts import ARCHITECT, DEVELOPER, MANAGER, MEMORY_PROTOCOL, STACK_CONSTRAINT
+from services.orchestration import MemoryStore
 
 
-def build_llm(config: Settings | None = None) -> LLM:
-    """Create the shared Claude-backed LLM used by every agent."""
+def build_llm(agent_name: str, config: Settings | None = None) -> LLM:
+    """Resolve the selected agent's model from project configuration."""
     cfg = config or default_settings
-    return LLM(model=cfg.model, api_key=cfg.api_key, temperature=cfg.temperature)
+    entry = load_agent_config(cfg.model_config_path)[agent_name]
+    return LLM(model=entry["model"], api_key=cfg.api_key, temperature=cfg.temperature)
 
 
 class EngineeringTeam:
     """Factory for the three roles that run the manager-led delivery loop."""
 
     def __init__(self, config: Settings | None = None) -> None:
-        self._llm = build_llm(config)
+        self._settings = config or default_settings
+        load_agent_config(self._settings.model_config_path)
 
-    def manager(self) -> Agent:
+    def create(self, name: str, memory: MemoryStore) -> Agent:
+        entry = load_agent_config(self._settings.model_config_path)[name]
+        context = memory.read()
+        stack = context["locked_stack"]
+        constraint = STACK_CONSTRAINT.format(locked_stack=json.dumps(stack)) if stack else (
+            "The stack is not locked yet. Extract explicit choices from the brief; "
+            "surface missing or ambiguous values for human resolution, never invent defaults."
+        )
+        prompt = {"manager": MANAGER, "architect": ARCHITECT, "senior_developer": DEVELOPER}[name]
         return Agent(
-            role="Engineering Manager",
-            goal=(
-                "Turn the raw brief into a clear build instruction for the "
-                "Architect, then, once the Architect confirms the work is "
-                "accepted, confirm final delivery to the stakeholder with exact "
-                "run instructions."
-            ),
-            backstory=(
-                "The team's manager. You kick off every delivery by instructing "
-                "the Architect on what to build and why. You never write code or "
-                "plans yourself, and you only announce delivery after the "
-                "Architect explicitly confirms the application is ready."
-            ),
-            llm=self._llm,
+            role=entry["role"],
+            goal="Complete only the current approved action under the two-gate protocol.",
+            backstory=prompt + "\n" + MEMORY_PROTOCOL + "\n" + constraint,
+            llm=build_llm(name, self._settings),
             allow_delegation=False,
+            respect_context_window=False,
             verbose=True,
         )
 
-    def architect(self) -> Agent:
-        return Agent(
-            role="Software Architect",
-            goal=(
-                "Turn the Manager's instruction into a lightweight technical plan "
-                "and a PRD-style, ordered set of build steps for the Developer. "
-                "After the Developer confirms an implementation is ready, check "
-                "it against the acceptance criteria and confirm to the Manager."
-            ),
-            backstory=(
-                "A hands-on architect who is the single point of contact between "
-                "the Manager and the Developer. You pick the simplest technology "
-                "that works, document it as clear PRD steps, and you are the one "
-                "who signs off on acceptance criteria before telling the Manager "
-                "the work is ready."
-            ),
-            llm=self._llm,
-            allow_delegation=False,
-            verbose=True,
-        )
+    def invoke(self, memory: MemoryStore, name: str, phase: str, instruction: str) -> str:
+        agent = self.create(name, memory)
+        if phase == "proposal":
+            protocol = (
+                "Write ONLY the plan document described below, in markdown, not the "
+                "deliverable it covers. This plan is a human approval gate and the last "
+                "chance the human gets to redirect the work it describes, so be complete "
+                "and specific rather than brief: anything you leave vague is decided "
+                "without them. Ground it in memory/context.json and the decisions already "
+                "approved. Restate the locked stack explicitly, and surface open choices "
+                "for the human instead of settling them yourself. Apply every item in this "
+                "item's proposal revision log verbatim - the human raised each one."
+            )
+        else:
+            protocol = (
+                "The human has approved the plan covering this work; the controller has "
+                "recorded it under memory/reviews/ as approved_plan.md. Execute exactly "
+                "what that plan specifies and apply all revision feedback. Do not add "
+                "scope, paths or technology the approved plan does not contain, and do "
+                "not revisit a choice the human already settled there. "
+                "Return ONLY the requested JSON object, no markdown fences. "
+                "The controller validates the result; do not mark it approved."
+            )
+        task = Task(description=protocol + "\n\n" + instruction + "\n\nDISK MEMORY:\n" + memory.snapshot(),
+                    expected_output="A scoped proposal" if phase == "proposal" else "The requested JSON deliverable",
+                    agent=agent)
+        crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, memory=False, verbose=True)
+        return str(crew.kickoff())
 
-    def developer(self) -> Agent:
-        return Agent(
-            role="Senior Developer",
-            goal=(
-                "Implement exactly what the Architect's PRD describes, then test "
-                "the implementation and confirm readiness back to the Architect."
-            ),
-            backstory=(
-                "A meticulous engineer who takes instructions only from the "
-                "Architect. You write complete, syntactically valid code, verify "
-                "it works, and explicitly report back to the Architect when it is "
-                "ready for acceptance review."
-            ),
-            llm=self._llm,
-            allow_delegation=False,
-            verbose=True,
-        )
+    def manager(self, memory: MemoryStore) -> Agent:
+        return self.create("manager", memory)
+
+    def architect(self, memory: MemoryStore) -> Agent:
+        return self.create("architect", memory)
+
+    def developer(self, memory: MemoryStore) -> Agent:
+        return self.create("senior_developer", memory)
 

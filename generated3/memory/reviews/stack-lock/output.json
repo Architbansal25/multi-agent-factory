@@ -1,0 +1,46 @@
+{
+  "locked_stack": {
+    "language": "JavaScript",
+    "framework": "Express.js",
+    "database": "JSON file on disk",
+    "infra": "Local filesystem"
+  },
+  "global_constraints": [
+    "A Node.js + Express backend exposing a REST API.",
+    "A JSON file acting as the data store (no database).",
+    "A simple server-rendered or static HTML/CSS/vanilla-JS frontend consuming the API.",
+    "| Constraint | Rule |",
+    "| Runtime | Node.js |",
+    "| Web framework | **Must use Express.js** |",
+    "| Data store | JSON file on disk (e.g. `data/books.json`) — no external DB |",
+    "| Frontend JS | Vanilla JavaScript only |",
+    "| CSS frameworks | Bootstrap or Materialize **CSS only** — their bundled JS/JS components are **not allowed** |",
+    "| Styling | Plain CSS, Sass, or Less all permitted |",
+    "| Documentation | A `README.md` describing the app and local run steps is **required** |",
+    "Agents must not substitute a database (Mongo/Postgres/SQLite/etc.), a frontend framework (React/Vue/Angular), or Bootstrap/Materialize's JS widgets (modals, dropdowns, carousels via their JS bundle) — reimplement any needed interactivity in vanilla JS.",
+    "Launching the app serves a page in the browser.",
+    "The page prominently displays the application.",
+    "The UI is clean and readable (aesthetic styling, centered content)."
+  ],
+  "conflicts": [],
+  "file_tree": [
+    "src/server.js",
+    "src/config/config.js",
+    "src/models/book.js",
+    "src/data/bookRepository.js",
+    "src/services/bookService.js",
+    "src/routes/bookRoutes.js",
+    "src/utils/logger.js",
+    "src/utils/fileUtils.js",
+    "src/public/index.html",
+    "src/public/css/styles.css",
+    "src/public/js/app.js",
+    "src/public/js/ui.js",
+    "src/package.json",
+    "src/.gitignore",
+    "src/.eslintrc.json",
+    "src/README.md",
+    "src/data/books.json",
+    "src/data/.gitkeep"
+  ]
+}

@@ -1,0 +1,13 @@
+agents:
+  manager:
+    role: Orchestrator
+    model_tier: mid
+    model: anthropic/claude-haiku-4-5-20251001
+  architect:
+    role: Solutions Architect
+    model_tier: high
+    model: anthropic/claude-sonnet-4-5-20250929
+  senior_developer:
+    role: Senior Software Engineer
+    model_tier: high
+    model: anthropic/claude-sonnet-4-5-20250929
