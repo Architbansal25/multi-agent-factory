@@ -50,3 +50,6 @@ Thumbs.db
 
 # Generated project memory can contain briefs and private feedback.
 /generated/
+
+# Projects created from the Streamlit UI (same privacy reasons as generated/).
+/projects/

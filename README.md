@@ -37,6 +37,37 @@ and asked again, so a typo can never be read as consent to build.
 Blank input and `yes` do not approve. Ctrl+C/EOF stop without auto-approval.
 Drafts and revision logs are available under `generated/memory/reviews/`.
 
+## Web UI (Streamlit)
+
+The same factory can be driven from the browser instead of the terminal:
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+- **Start a build:** write the brief with the guided form (problem statement,
+  constraints, mandatory tech stack, acceptance criteria) or paste/upload markdown
+  in the `INSTRUCTIONS.md` layout. Each brief gets its own `projects/<name>/` root.
+- **Watch progress:** a step tracker, the factory's activity log (plans drafted,
+  guardrail rejections and retries, approvals, publications) and the live agent
+  output refresh every two seconds while the agents work. **Stop** halts the run;
+  **Resume** continues from the last saved step.
+- **Answer the gates:** when an agent stops at a gate the plan is shown in full with
+  **Approve**, **Approve build-now** (gate 1 only) and **Send back with changes**,
+  which are the same answers the terminal accepts. Earlier feedback is listed under
+  the plan.
+- **See the output:** the plans, PRD, FR, NFR, HLD and ADRs, a browser for every
+  file under `src/`, the delivery notes, and zip downloads. A finished or approved
+  decision can be reopened with feedback, like `--reopen`.
+
+Set `ANTHROPIC_API_KEY` before launching, or paste the key in the sidebar. The key
+is kept in the browser session and handed to the worker process, never written to
+disk. Each action starts a background worker (`services/ui_worker.py`). The worker
+resumes the project from disk, applies the one answer you gave, and exits at the
+next gate. Closing the tab never loses a run, and the sidebar also opens projects
+created by the CLI (`generated*/`). UI bookkeeping is written to `<project>/.ui/`,
+outside `memory/`, so it is never sent to the agents.
+
 ## Delivery flow
 
 The run stops for you twice.
@@ -232,6 +263,8 @@ Tests use fake agent responses or mocked CrewAI kickoff; no API calls or keys ar
 required. They cover both plan gates, revisions, resume, reopening, per-agent models,
 fresh memory, stack mismatch, path safety and an end-to-end TypeScript pipeline.
 
+- [app.py](app.py): Streamlit UI; [services/ui_runner.py](services/ui_runner.py) and
+  [services/ui_worker.py](services/ui_worker.py) run the factory for it in the background.
 - [crew.py](crew.py): orchestration, stack lock, publication and reopening.
 - [services/orchestration.py](services/orchestration.py): disk store and state machine.
 - [services/guardrails.py](services/guardrails.py): structured artifact validation.
