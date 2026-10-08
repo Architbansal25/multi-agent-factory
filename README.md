@@ -185,7 +185,10 @@ generated/
 The brief is preserved verbatim; agents ignore HTML guidance comments. Constraints
 bullets, table rows and paragraphs are retained verbatim in context. Each invocation
 receives a fresh snapshot of the memory folder, including audit and revision logs.
-CrewAI persistent memory is disabled; there is no separate mutable context cache.
+Each piece of text is sent once: identical copies (draft, approved plan, plan of record)
+are listed as identical, the task log is sent without the drafts and outputs it repeats,
+a document's output.json is dropped once its file is published, and material archived by
+a reopen is left out. CrewAI persistent memory is disabled; there is no separate mutable context cache.
 Approved decisions include artifact references, not just an agent's latest response.
 
 Existing demo artifacts in `output/` remain untouched. Old ungated output is not

@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -156,6 +157,53 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(self.calls, ["execute", "execute", "execute"])
         self.assertEqual(self.published, [])
         self.assertEqual(self.memory.read()["completed_items"], {})
+
+
+class SnapshotTests(unittest.TestCase):
+    """Each invocation re-sends the snapshot, so it must carry each piece of text once."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.memory = MemoryStore(self.root)
+        self.memory.initialize("Original brief\n", "test")
+
+    def write(self, relative, text):
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_an_approved_plan_is_sent_once(self):
+        plan = "# Architecture plan\n" + "detail " * 500
+        for relative in ("memory/02_architecture_plan.md", "memory/reviews/architecture-plan/proposal.md",
+                         "memory/reviews/architecture-plan/approved_plan.md"):
+            self.write(relative, plan)
+        snapshot = self.memory.snapshot()
+        self.assertEqual(snapshot.count(plan), 1)
+        self.assertIn("memory/reviews/architecture-plan/approved_plan.md\n(identical to memory/02_architecture_plan.md)", snapshot)
+
+    def test_task_log_keeps_events_and_feedback_but_not_drafts(self):
+        self.memory.record("proposal", item="prd", content="DRAFT TEXT " * 200)
+        self.memory.record("revision", item="prd", gate="proposal", feedback="Add tests.")
+        snapshot = self.memory.snapshot()
+        self.assertNotIn("DRAFT TEXT", snapshot)
+        self.assertIn('"event": "proposal"', snapshot)
+        self.assertIn("Add tests.", snapshot)
+
+    def test_published_output_is_dropped_but_code_output_is_kept(self):
+        self.write("memory/01_prd.md", "# PRD\nreal content")
+        self.write("memory/reviews/prd/output.json", json.dumps({"files": {"memory/01_prd.md": "# PRD\nreal content"}}))
+        self.write("memory/reviews/development/output.json", json.dumps({"files": {"src/app.js": "CODE"}}))
+        self.write("memory/reviews/fr/output.json", json.dumps({"files": {"memory/03_architecture/fr.md": "REJECTED"}}))
+        snapshot = self.memory.snapshot()
+        self.assertNotIn("memory/reviews/prd/output.json", snapshot)
+        self.assertIn("CODE", snapshot)       # packaging needs the code it describes
+        self.assertIn("REJECTED", snapshot)   # never published, so the agent still sees it
+
+    def test_material_archived_by_a_reopen_is_left_out(self):
+        self.write("memory/superseded/reopen-1-hld/artifacts/memory/03_architecture/hld.md", "OLD DESIGN")
+        self.assertNotIn("OLD DESIGN", self.memory.snapshot())
 
 
 if __name__ == "__main__":
