@@ -8,6 +8,11 @@ from dataclasses import dataclass
 
 
 
+# An ADR records a decision the brief left open. Each is its own model call and is
+# re-read by every later call, so a small project gets a handful, not one per choice.
+MAX_ADRS = 3
+
+
 @dataclass(frozen=True)
 class StageTask:
     name: str
@@ -53,7 +58,9 @@ The FR IDs and one-line titles you will write, grouped by capability.
 
 ## Non-Functional Targets
 The measurable performance, scalability, security, availability and maintainability
-numbers you will commit to, each with its justification.
+numbers you will commit to, each with its justification. Commit only to targets that
+matter for this application; where a category genuinely does not apply at this size,
+say so in one line with the reason instead of inventing a number.
 
 ## Architecture
 The components and their responsibilities, the 2-3 key flows you will draw as
@@ -61,9 +68,14 @@ sequence diagrams, failure modes, security boundaries, data consistency and how 
 system is tested and deployed.
 
 ## Proposed File Tree
-Every file you will ask the Developer to build - source modules, tests, dependency
-manifests, static assets, configuration - as a flat list of complete paths, one per
-line, no directory placeholders and no tree-drawing characters.
+Only the files the application needs to be installed, run and tested - source
+modules, tests, the dependency manifest, static assets, seed data and the README - as
+a flat list of complete paths, one per line, no directory placeholders and no
+tree-drawing characters. Every file must trace to a requirement or acceptance
+criterion. Leave out linter, formatter, CI, Docker and editor configuration, .gitignore,
+.gitkeep and other empty placeholders (the app creates any directory it writes to at
+startup), and helper modules that only one other file uses - unless the brief asks
+for them. Fewer, well-named files are easier to review and cheaper to build.
 
 `src/` is the generated project's ROOT DIRECTORY, not its source folder, so EVERY
 path in this list must begin with `src/` - tests, manifests and assets included.
@@ -84,9 +96,11 @@ without a PRD, FR, NFR or HLD, in which case this section and the ones above are
 entire specification the Developer gets - so make them complete enough to build from.
 
 ## Architecture Decision Records
-The numbered ADRs you will write
-(memory/03_architecture/tradeoffs/0001-title.md style), one per significant decision,
-with the decision each records.
+One to three numbered ADRs (memory/03_architecture/tradeoffs/0001-title.md style),
+only for decisions the brief leaves open and that have real alternatives - for example
+how data is stored, where module boundaries sit, or how the API is shaped - with the
+decision each records. Never write an ADR for a choice the brief already mandates;
+mark it as mandated in the Locked Stack table instead.
 
 ## Risks
 What could go wrong with this plan and what you would do about it.
@@ -159,7 +173,8 @@ will be written and this step is the only place the binding file tree is recorde
 Add a file_tree field: an array of every file path from the approved plan's Proposed
 File Tree section, one complete path per entry, with no directory placeholders and
 no tree-drawing characters. It must hold at least two application source modules.
-Never invent a file the human did not approve.
+Never invent a file the human did not approve, and leave out placeholder files such
+as .gitkeep: the factory rejects them.
 
 OMIT EVERY TEST FILE. Choosing build-now means no tests are generated in this run,
 so drop any path under a test/tests/__tests__ directory and any file named like
@@ -212,16 +227,21 @@ def build_tasks() -> list[StageTask]:
         StageTask("nfr", "architecture", "architect", "memory/03_architecture/nfr.md",
                   "Write measurable performance, scalability, security, availability and maintainability "
                   "requirements, with justified targets appropriate to this application. Use the targets "
-                  "committed to in the approved architecture plan.", "nfr.md"),
+                  "committed to in the approved architecture plan. Where a category does not apply at "
+                  "this size, keep its row and write 'Not applicable' with the reason rather than "
+                  "inventing a target.", "nfr.md"),
         StageTask("hld", "architecture", "architect", "memory/03_architecture/hld.md",
                   "Write the HLD using the locked stack. Include a Mermaid component diagram, "
                   "sequence diagrams for 2-3 key flows, failure modes, security boundaries, data "
-                  "consistency, test and deployment design. Include every proposed source, test, "
-                  "dependency, configuration and infrastructure file in the module/file tree under src/. "
+                  "consistency, test and deployment design. Show every file of the approved file tree in "
+                  "the module/file tree under src/, and leave out placeholder files such as .gitkeep "
+                  "even if the plan listed one. "
                   "At least two application modules and tests are mandatory. Include additional JSON "
                   "fields: file_tree (array of complete file paths, no directory placeholders) "
                   "and adrs (array of memory/03_architecture/tradeoffs/0001-title.md style paths, "
-                  "one per significant decision, at least one). Repeat every path verbatim in hld.md. "
+                  "one to three, only for decisions the brief leaves open; if the approved plan listed "
+                  "more, keep the three most significant and cover the rest in the HLD text). "
+                  "Repeat every path verbatim in hld.md. "
                   "file_tree and adrs must match the Proposed File Tree and Architecture Decision "
                   "Records sections of the approved architecture plan; the human approved that tree "
                   "and it is binding. src/ is the generated project's root directory, so every "
@@ -236,7 +256,8 @@ def build_tasks() -> list[StageTask]:
 def adr_task(path: str) -> StageTask:
     return StageTask(path.rsplit("/", 1)[-1][:-3], "architecture", "architect", path,
                      "Document ONLY this HLD decision as an ADR. Include context, decision, "
-                     "alternatives with pros/cons, and consequences. Respect prior approvals.", "adr.md")
+                     "alternatives with pros/cons, and consequences, in about one page. Respect prior "
+                     "approvals.", "adr.md")
 
 
 DEVELOPMENT = StageTask(
