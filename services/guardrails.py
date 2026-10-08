@@ -159,6 +159,10 @@ LANGUAGE_EXTENSIONS = {
     "java": {".java"}, "kotlin": {".kt", ".kts"}, "c#": {".cs"}, "csharp": {".cs"},
     "go": {".go"}, "golang": {".go"}, "rust": {".rs"}, "ruby": {".rb"}, "php": {".php"},
     "swift": {".swift"}, "dart": {".dart"}, "c++": {".cpp", ".hpp", ".cc", ".h"}, "c": {".c", ".h"},
+    # Node.js is a runtime, but it is how people and models name a JavaScript project's
+    # language, and a run that locked "Node.js" used to fail its stack lock three times.
+    "node.js": {".js", ".jsx", ".mjs", ".cjs"}, "nodejs": {".js", ".jsx", ".mjs", ".cjs"},
+    "node": {".js", ".jsx", ".mjs", ".cjs"},
 }
 
 
@@ -169,7 +173,11 @@ def source_extensions(locked: dict) -> set[str]:
         if re.search(r"(?<![a-z+#])" + re.escape(name) + r"(?![a-z+#])", language):
             extensions.update(suffixes)
     if not extensions:
-        raise GuardrailValidationError(f"No language validator for {language!r}; add one before generating code.")
+        raise GuardrailValidationError(
+            f"locked_stack.language must name a programming language the factory can check - "
+            f"Python, JavaScript, TypeScript, Java, Kotlin, C#, Go, Rust, Ruby, PHP, Swift, Dart, C++ "
+            f"or C - but it is {language!r}. Put the language there and leave runtimes, frameworks "
+            "and platforms to the framework and infra fields.")
     return extensions
 
 
