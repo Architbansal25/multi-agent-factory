@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from services.guardrails import (
-    GuardrailValidationError, parse_bundle, safe_path, validate_implementation, validate_tree,
+    GuardrailValidationError, parse_bundle, safe_path, source_extensions, validate_implementation,
+    validate_tree,
 )
 
 
@@ -45,6 +46,15 @@ class ArtifactTests(unittest.TestCase):
         # In a real run a src/data/.gitkeep cost a full rewrite of the code: empty files fail validation.
         with self.assertRaisesRegex(GuardrailValidationError, "placeholder"):
             validate_tree([*self.files, "src/data/.gitkeep"], self.root, self.stack)
+
+    def test_node_js_is_understood_as_javascript(self):
+        # A real stack lock wrote "Node.js" as the language and failed three times.
+        for language in ("Node.js", "node", "NodeJS 22", "JavaScript (Node.js 22 LTS)"):
+            self.assertEqual(source_extensions({"language": language}), {".js", ".jsx", ".mjs", ".cjs"})
+
+    def test_an_unknown_language_is_rejected_with_names_the_agent_can_use(self):
+        with self.assertRaisesRegex(GuardrailValidationError, "JavaScript, TypeScript"):
+            source_extensions({"language": "Elixir"})
 
     def test_rejects_language_substitution(self):
         with self.assertRaises(GuardrailValidationError):
