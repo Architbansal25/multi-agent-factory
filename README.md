@@ -239,10 +239,10 @@ local controller is not a concurrent or transactional distributed job system.
 - Exact locked-stack metadata on downstream outputs; recognized source extensions
   must match the locked language. Unknown languages stop for validator extension.
 - HLD must specify at least two application modules, tests and numbered ADRs.
+  Development cannot add, omit or rename files from this approved tree.
 - The file tree is kept lean: placeholder files such as `.gitkeep` are rejected, and the
   Architect is told to leave out lint, CI, Docker and editor configuration unless the brief
   asks for it. The HLD records one to three ADRs, only for decisions the brief leaves open.
-  Development cannot add, omit or rename files from this approved tree.
 - Python source is syntax-checked, and supported Python frameworks require real
   AST imports. Common JS frameworks require their package manifest dependency.
 - Invalid deliverables receive validation feedback, with at most three attempts
