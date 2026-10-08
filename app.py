@@ -9,6 +9,7 @@ project's disk memory, so closing the tab never loses a run.
 """
 from __future__ import annotations
 
+import html
 import io
 import json
 import os
@@ -46,8 +47,43 @@ LANGUAGES = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs":
              ".rs": "rust", ".rb": "ruby", ".php": "php", ".cs": "csharp", ".xml": "xml"}
 
 st.set_page_config(page_title="Engineering Factory", page_icon="🏭", layout="wide")
+
+
+# Streamlit wraps every container in a layout div exactly as tall as the container, and a
+# sticky element cannot leave its parent, so pin the wrapper that sits directly in the
+# page's main column. Matching by structure keeps this working across Streamlit versions.
+PINNED = ('[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] '
+          '> div:has(.st-key-sticky_header)')
+
+
+def page_background() -> str:
+    """The pinned header needs an opaque background or content shows through it."""
+    custom = st.get_option("theme.backgroundColor")
+    if custom:
+        return f"{PINNED} {{ background: {custom}; }}"
+    theme = getattr(getattr(st, "context", None), "theme", None)
+    kind = getattr(theme, "type", None)
+    if kind in ("dark", "light"):
+        return f"{PINNED} {{ background: {'#0e1117' if kind == 'dark' else '#ffffff'}; }}"
+    # Older Streamlit cannot report the theme; its default follows the OS setting.
+    return (f"{PINNED} {{ background: #ffffff; }} "
+            f"@media (prefers-color-scheme: dark) {{ {PINNED} {{ background: #0e1117; }} }}")
+
+
+st.markdown(f"""
+<style>
+/* Project header, status banner and step tracker stay put; the rest scrolls under them. */
+{PINNED} {{ position: sticky; top: 3.75rem; z-index: 990;
+        padding: 0.4rem 0 0.6rem; border-bottom: 1px solid rgba(128,128,128,0.25); }}
+{page_background()}
+</style>
+""", unsafe_allow_html=True)
 st.markdown("""
 <style>
+.st-key-sticky_header .stAlert { margin-bottom: 0; }
+.project-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.project-title h2 { margin: 0; padding: 0; }
+.project-title code { font-size: 0.75rem; }
 .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 12px; }
 .chip { padding: 4px 10px; border-radius: 999px; font-size: 0.82rem; white-space: nowrap;
         border: 1px solid rgba(128,128,128,0.35); }
@@ -271,7 +307,8 @@ def describe(event: dict) -> str:
     return f"• {kind} {item}"
 
 
-def render_live(root: str, was_running: bool) -> None:
+def render_status(root: str, was_running: bool) -> None:
+    """Pinned to the top of the page: what is running now and where the run stands."""
     run = ProjectRun(Path(root))
     status = run.status()
     running = status.get("state") == "running"
@@ -280,22 +317,29 @@ def render_live(root: str, was_running: bool) -> None:
     context = run.context()
     active = context.get("active_item") or {}
 
+    st.markdown(f'<div class="project-title"><h2>{html.escape(run.root.name)}</h2>'
+                f'<code>{html.escape(run.root.relative_to(BASE_DIR).as_posix())}</code></div>',
+                unsafe_allow_html=True)
     if running:
         agent = AGENT_NAMES.get(context.get("current_agent"), "The team")
         doing = STATE_TEXT.get(active.get("state"), "is starting up")
         item = f" on **{active['id']}**" if active.get("id") else ""
-        left, right = st.columns([5, 1])
+        left, right = st.columns([5, 1], vertical_alignment="center")
         left.info(f"⏳ **{agent}** {doing}{item} · running for {ago(status.get('started_at'))}")
         if right.button("Stop", use_container_width=True, help="Stops after the current check; "
                         "everything approved so far is kept and you can resume later."):
             run.request_stop()
             st.toast("Stop requested")
-        if active.get("last_rejection"):
-            st.warning(f"Attempt {active.get('validation_failures', 0) + 1} of 3 - the guardrails rejected "
-                       f"the previous output: {active['last_rejection']}")
-
     if context:
         render_flow(context)
+
+
+def render_activity(root: str) -> None:
+    run = ProjectRun(Path(root))
+    active = run.context().get("active_item") or {}
+    if run.is_running() and active.get("last_rejection"):
+        st.warning(f"Attempt {active.get('validation_failures', 0) + 1} of 3 - the guardrails rejected "
+                   f"the previous output: {active['last_rejection']}")
 
     activity, log = st.columns([1, 1])
     with activity:
@@ -482,9 +526,10 @@ def render_outputs(run: ProjectRun) -> None:
 def project_view(run: ProjectRun) -> None:
     status = run.status()
     running = status.get("state") == "running"
-    st.header(run.root.name)
-    st.caption(f"`{run.root.relative_to(BASE_DIR).as_posix()}`")
-    st.fragment(render_live, run_every=2.0 if running else None)(str(run.root), running)
+    every = 2.0 if running else None
+    with st.container(key="sticky_header"):
+        st.fragment(render_status, run_every=every)(str(run.root), running)
+    st.fragment(render_activity, run_every=every)(str(run.root))
     if not running:
         render_controls(run, status, run.context())
     render_outputs(run)

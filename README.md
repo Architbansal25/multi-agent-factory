@@ -185,7 +185,10 @@ generated/
 The brief is preserved verbatim; agents ignore HTML guidance comments. Constraints
 bullets, table rows and paragraphs are retained verbatim in context. Each invocation
 receives a fresh snapshot of the memory folder, including audit and revision logs.
-CrewAI persistent memory is disabled; there is no separate mutable context cache.
+Each piece of text is sent once: identical copies (draft, approved plan, plan of record)
+are listed as identical, the task log is sent without the drafts and outputs it repeats,
+a document's output.json is dropped once its file is published, and material archived by
+a reopen is left out. CrewAI persistent memory is disabled; there is no separate mutable context cache.
 Approved decisions include artifact references, not just an agent's latest response.
 
 Existing demo artifacts in `output/` remain untouched. Old ungated output is not
@@ -237,6 +240,9 @@ local controller is not a concurrent or transactional distributed job system.
   must match the locked language. Unknown languages stop for validator extension.
 - HLD must specify at least two application modules, tests and numbered ADRs.
   Development cannot add, omit or rename files from this approved tree.
+- The file tree is kept lean: placeholder files such as `.gitkeep` are rejected, and the
+  Architect is told to leave out lint, CI, Docker and editor configuration unless the brief
+  asks for it. The HLD records one to three ADRs, only for decisions the brief leaves open.
 - Python source is syntax-checked, and supported Python frameworks require real
   AST imports. Common JS frameworks require their package manifest dependency.
 - Invalid deliverables receive validation feedback, with at most three attempts

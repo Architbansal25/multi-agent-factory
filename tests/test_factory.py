@@ -207,6 +207,22 @@ class FactoryTests(unittest.TestCase):
         bundle["global_constraints"] = ["| Runtime | Node.js |"]
         factory._validate_stack_lock(json.dumps(bundle))
 
+    def test_hld_records_at_most_three_decisions(self):
+        context = self.factory.memory.read()
+        context["locked_stack"] = self.stack
+        self.factory.memory.save(context)
+        hld = next(task for task in build_tasks() if task.name == "hld")
+        adrs = [f"memory/03_architecture/tradeoffs/000{n}-decision-{n}.md" for n in range(1, 5)]
+        content = (self.config.base_dir / "templates/architecture/hld.md").read_text(encoding="utf-8")
+        content += "\n```mermaid\nsequenceDiagram\nA->>B: go\n```\n" + "\n".join([*self.source, *adrs])
+
+        def bundle(paths):
+            return json.dumps({"stack": self.stack, "files": {hld.path: content},
+                               "file_tree": list(self.source), "adrs": paths})
+        with self.assertRaisesRegex(ValueError, "at most 3 ADRs"):
+            self.factory._validate_artifact(hld, bundle(adrs))
+        self.factory._validate_artifact(hld, bundle(adrs[:3]))
+
     def test_reopen_requires_both_manager_gates_and_preserves_history(self):
         self.factory.run()
         def reopen_invoke(agent, phase, instruction):

@@ -173,6 +173,12 @@ def source_extensions(locked: dict) -> set[str]:
     return extensions
 
 
+# Empty files that only exist to keep a directory in Git. validate_files rejects empty
+# deliverables, so one in the tree costs a full rewrite of the code; the app creates the
+# directories it writes to instead.
+PLACEHOLDER_NAMES = {".gitkeep", ".keep"}
+
+
 def is_test_path(path: str) -> bool:
     return any(part in {"test", "tests", "__tests__"} for part in path.split("/")) or bool(
         re.search(r"(^|/)(test_.*|.*_test\.[^/]+|.*\.(test|spec)\.[^/]+)$", path)
@@ -189,6 +195,10 @@ def validate_tree(tree: object, root: Path, locked: dict, require_tests: bool = 
     modules = []
     for relative in tree:
         safe_path(root, relative, "src")
+        if PurePosixPath(relative).name in PLACEHOLDER_NAMES:
+            raise GuardrailValidationError(
+                f"Leave out placeholder files such as {relative}: empty files are rejected, and the "
+                "app should create any directory it writes to at startup.")
         if any(other.startswith(relative.casefold() + "/") for other in [path.casefold() for path in tree]):
             raise GuardrailValidationError(f"File/directory collision: {relative}")
         suffix = PurePosixPath(relative).suffix

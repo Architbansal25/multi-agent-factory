@@ -77,11 +77,62 @@ class MemoryStore:
             handle.write(json.dumps({"timestamp": timestamp(), "event": event, **details}) + "\n")
 
     def snapshot(self) -> str:
+        """Everything under memory/ the agents need, with each piece of text sent once.
+
+        Every invocation re-sends this, so duplicates compound: an approved plan exists as
+        the draft, the approved copy and the plan of record, the task log repeats every
+        draft and output in full, and a document's output.json repeats the file it
+        published. Left in, they push a full run past the model's context window.
+        """
         sections = ["memory/context.json\n" + self.context_path.read_text(encoding="utf-8")]
+        first_path: dict[str, str] = {}
         for path in sorted(self.folder.rglob("*")):
-            if path.is_file() and path != self.context_path and path.suffix in {".md", ".json", ".jsonl"}:
-                sections.append(f"{path.relative_to(self.root).as_posix()}\n{path.read_text(encoding='utf-8')}")
+            if not path.is_file() or path == self.context_path or path.suffix not in {".md", ".json", ".jsonl"}:
+                continue
+            relative = path.relative_to(self.root).as_posix()
+            if relative.startswith("memory/superseded/"):
+                continue  # archived by a reopen; no longer in force
+            text = path.read_text(encoding="utf-8")
+            if path == self.folder / "04_task_log.jsonl":
+                text = self._log_without_content(text)
+            elif path.name == "output.json" and self._already_published(text):
+                continue
+            if text in first_path:
+                sections.append(f"{relative}\n(identical to {first_path[text]})")
+                continue
+            first_path[text] = relative
+            sections.append(f"{relative}\n{text}")
         return "\n\n".join(sections)
+
+    @staticmethod
+    def _log_without_content(text: str) -> str:
+        """The audit events, minus the full drafts and outputs that live in their own files."""
+        lines = []
+        for line in text.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                lines.append(line)
+                continue
+            event.pop("content", None)
+            lines.append(json.dumps(event))
+        return "\n".join(lines) + ("\n" if lines else "")
+
+    def _already_published(self, text: str) -> bool:
+        """True when every file in a deliverable already sits in memory/ unchanged."""
+        try:
+            files = json.loads(text).get("files")
+        except (json.JSONDecodeError, AttributeError):
+            return False
+        if not isinstance(files, dict) or not files:
+            return False
+        for relative, content in files.items():
+            if not isinstance(relative, str) or not relative.startswith("memory/"):
+                return False  # e.g. source code, which only lives in src/
+            published = self.root / relative
+            if not published.is_file() or published.read_text(encoding="utf-8") != content:
+                return False
+        return True
 
 
 Invoke = Callable[[str, str, str], str]

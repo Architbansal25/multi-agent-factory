@@ -21,7 +21,7 @@ from services.guardrails import (
 from services.orchestration import ApprovalPaused, Approve, HumanGatedRunner, Invoke, MemoryStore, timestamp
 from tasks.speckit_tasks import (
     ARCHITECTURE_PLAN, BUILD_NOW_NOTE, DEVELOPMENT, FILE_TREE_INSTRUCTION, IMPLEMENTATION_PLAN,
-    PACKAGING, STACK_INSTRUCTION, StageTask, adr_task, build_tasks,
+    MAX_ADRS, PACKAGING, STACK_INSTRUCTION, StageTask, adr_task, build_tasks,
 )
 
 # Saying "approve build-now" at gate 1 skips the PRD, FR, NFR, HLD and ADRs and
@@ -218,6 +218,10 @@ class SpecKitFactory:
                 isinstance(path, str) and re.fullmatch(r"memory/03_architecture/tradeoffs/\d{4}-[a-z0-9-]+\.md", path) for path in adrs
             ) or len(set(adrs)) != len(adrs):
                 raise GuardrailValidationError("List distinct numbered ADR paths, one for each significant decision.")
+            if len(adrs) > MAX_ADRS:
+                raise GuardrailValidationError(
+                    f"Write at most {MAX_ADRS} ADRs, only for decisions the brief leaves open. Keep the "
+                    "most significant and cover the rest in the HLD text.")
             for path in [*tree, *adrs]:
                 if path not in content:
                     raise GuardrailValidationError(f"HLD must explicitly show the approved path: {path}")

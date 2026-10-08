@@ -41,6 +41,11 @@ class ArtifactTests(unittest.TestCase):
         prefixed = [p if p.startswith("src/") else "src/" + p for p in conventional]
         self.assertEqual(validate_tree(prefixed, self.root, stack), prefixed)
 
+    def test_placeholder_files_are_left_out_of_the_tree(self):
+        # In a real run a src/data/.gitkeep cost a full rewrite of the code: empty files fail validation.
+        with self.assertRaisesRegex(GuardrailValidationError, "placeholder"):
+            validate_tree([*self.files, "src/data/.gitkeep"], self.root, self.stack)
+
     def test_rejects_language_substitution(self):
         with self.assertRaises(GuardrailValidationError):
             validate_tree([*self.files, "src/server.py"], self.root, self.stack)
